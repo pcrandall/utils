@@ -3,7 +3,6 @@ package utils
 import (
 	"log"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -11,24 +10,32 @@ import (
 	"github.com/google/uuid"
 	"github.com/pcrandall/utils/stripansi"
 	"github.com/pkg/errors"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var (
 	err         error
-	logfile     *os.File
+	Logfile     *os.File
+	ErrLog      *log.Logger
 	regexNumber = regexp.MustCompile(`^\d+$`) // regexNumber is a regex that matches a string that looks like an integer
 )
 
-func init() {
-	logpath := filepath.Join(".", "logs")
-	if _, err := os.Stat(logpath); os.IsNotExist(err) {
-		os.MkdirAll(logpath, os.ModePerm)
+func InitLog() {
+	Logfile, err = os.OpenFile("logs/logfile.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		panic(err)
 	}
-	//Initialize
-	logfile, err = os.OpenFile("./logs/logfile.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	CheckErr(err, "Error Creating logfile.txt")
-	log.SetOutput(logfile)
-	defer logfile.Close()
+	ErrLog = log.New(Logfile, "", log.Ldate|log.Ltime|log.LstdFlags)
+	ErrLog.SetOutput(&lumberjack.Logger{
+		Filename:   "logs/logfile.txt",
+		MaxSize:    25, // megabytes after which new file is created
+		MaxBackups: 3,  // number of backups
+		MaxAge:     28, //days
+	})
+
+	log.SetOutput(Logfile)
+
+	defer Logfile.Close()
 }
 
 // only prints errors to log
@@ -41,18 +48,11 @@ func DebugErr(err error, str string) {
 // prints to log then panic if err
 func CheckErr(err error, str string) {
 	if err != nil {
+		// notice that we're using 1, so it will actually log the where
+		// the error happened, 0 = this function, we don't want that.
 		pc, fn, line, _ := runtime.Caller(1)
-		log.Panicf("[error] in %s[%s:%d] %v", runtime.FuncForPC(pc).Name(), fn, line, errors.Wrap(err, str))
-		// log.Panicln(errors.Wrap(err, str))
+		ErrLog.Panicf("[error] in %s[%s:%d] %v", runtime.FuncForPC(pc).Name(), fn, line, errors.Wrap(err, str))
 	}
-
-	// if err != nil {
-	// 	// notice that we're using 1, so it will actually log the where
-	// 	// the error happened, 0 = this function, we don't want that.
-	// 	pc, fn, line, _ := runtime.Caller(1)
-	// 	errLog.Panicf("[error] in %s[%s:%d] %v", runtime.FuncForPC(pc).Name(), fn, line, err)
-	// }
-	// errLog.Panicln(err)
 }
 
 // GenerateUUID returns a uuid v4 in string
@@ -103,31 +103,3 @@ func StripNONALPHANUMERIC(str string) string {
 	re := regexp.MustCompile(ansi)
 	return re.ReplaceAllString(str, "")
 }
-
-// func GetConfig(str string, config interface{}) {
-// 	fmt.Println("Bfore: ", config)
-// 	if _, err := os.Stat(str); err == nil { // check if config file exists
-// 		yamlFile, err := ioutil.ReadFile(str)
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		err = yaml.Unmarshal(yamlFile, config)
-// 		if err != nil {
-// 			log.Panic(err)
-// 		}
-// 		// } else if os.IsNotExist(err) { // config file not included, use embedded config
-// 		// 	yamlFile, err := Asset(str)
-// 		// 	if err != nil {
-// 		// 		panic(err)
-// 		// 	}
-// 		// 	err = yaml.Unmarshal(yamlFile, &config)
-// 		// 	if err != nil {
-// 		// 		panic(err)
-// 		// 	}
-// 		// } else {
-// 	} else {
-// 		CheckErr(err, "Schrodinger: file may or may not exist. See err for details.")
-// 	}
-
-// 	fmt.Println("After: ", config)
-// }
